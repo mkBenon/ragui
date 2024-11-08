@@ -3,7 +3,7 @@ import { MessageSquare, FileText, Plus, MessageCircle } from 'lucide-react';
 import Split from 'react-split';
 
 // Flowise API configuration
-const FLOWISE_API = 'https://kenteai-dev.mtn.com/api/v1/prediction/7bbf52ff-8072-424b-8f79-83dc3e76906b';
+const FLOWISE_API = 'https://kenteai-dev.mtn.com/api/v1/prediction/d57f9c4b-9903-4b32-a7ca-44efa6d1d18b';
 
 const SelectionPopup = ({ position, selectedText, onAskQuestion, onClose }) => {
   const [isInputMode, setIsInputMode] = useState(false);
@@ -57,13 +57,13 @@ const SelectionPopup = ({ position, selectedText, onAskQuestion, onClose }) => {
               value={questionInput}
               onChange={(e) => setQuestionInput(e.target.value)}
               placeholder="Type your question..."
-              className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-mtn-blue"
               autoFocus
             />
             <button
               type="submit"
               disabled={!questionInput.trim()}
-              className="px-2 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-2 py-1 bg-mtn-blue text-white rounded text-sm hover:bg-mtn-darkBlue disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Ask
             </button>
@@ -117,6 +117,20 @@ const DocumentViewer = ({ document, highlightedText, onAskAboutSelection }) => {
     }
   }, []);
 
+  // Extract source documents from the agent reasoning
+  const sourceDocuments = document.agentReasoning?.reduce((docs, agent) => {
+    if (agent.sourceDocuments && Array.isArray(agent.sourceDocuments)) {
+      const validDocs = agent.sourceDocuments
+        .filter(doc => doc !== null && doc.pageContent)
+        .map(doc => ({
+          content: doc.pageContent,
+          metadata: doc.metadata
+        }));
+      return [...docs, ...validDocs];
+    }
+    return docs;
+  }, []);
+
   return (
     <div className="relative">
       <div 
@@ -124,25 +138,33 @@ const DocumentViewer = ({ document, highlightedText, onAskAboutSelection }) => {
         onMouseUp={handleTextSelection}
       >
         <div className="space-y-4">
-          {document.sourceDocuments.map((doc, index) => (
-            <div
-              key={index}
-              className={`p-4 rounded-lg border ${
-                highlightedText?.includes(doc.pageContent)
-                  ? 'bg-yellow-50 border-yellow-200'
-                  : 'border-gray-200'
-              }`}
-            >
-              <p className="text-gray-800">{doc.pageContent}</p>
-              <div className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                <FileText className="w-3 h-3" />
-                <span>
-                  {doc.metadata.source}
-                  {doc.metadata.loc && ` (Lines ${doc.metadata.loc.lines.from}-${doc.metadata.loc.lines.to})`}
-                </span>
+          {sourceDocuments && sourceDocuments.length > 0 ? (
+            sourceDocuments.map((doc, index) => (
+              <div
+                key={index}
+                className={`p-4 rounded-lg border ${
+                  highlightedText?.includes(doc.content)
+                    ? 'bg-mtn-yellow/10 border-mtn-yellow'
+                    : 'border-gray-200'
+                }`}
+              >
+                <p className="text-gray-800">{doc.content}</p>
+                {doc.metadata && (
+                  <div className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                    <FileText className="w-3 h-3" />
+                    <span>
+                      {doc.metadata.source}
+                      {doc.metadata.loc && ` (Lines ${doc.metadata.loc.lines.from}-${doc.metadata.loc.lines.to})`}
+                    </span>
+                  </div>
+                )}
               </div>
+            ))
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-gray-500">No reference documents available for this response</p>
             </div>
-          ))}
+          )}
         </div>
       </div>
       
@@ -182,7 +204,6 @@ const RAGInterface = () => {
     setActiveChat(newChat);
   }, []);
 
-  // Initialize with a single chat only once
   useEffect(() => {
     if (!hasInitialized.current) {
       hasInitialized.current = true;
@@ -224,17 +245,29 @@ const RAGInterface = () => {
         console.error('API error response:', errorText);
         return {
           text: "Hello! I'm currently having trouble connecting. Could you check the network tab for specific errors?",
-          sourceDocuments: []
+          agentReasoning: []
         };
       }
       
-      const data = await response.json();
-      return data;
+      // Get the response text and remove any trailing % character
+      const responseText = await response.text();
+      const cleanedResponse = responseText.replace(/%$/, '');
+      
+      try {
+        const data = JSON.parse(cleanedResponse);
+        return data;
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        return {
+          text: "I received a response but couldn't process it properly. Please try again.",
+          agentReasoning: []
+        };
+      }
     } catch (error) {
       console.error('Error asking question:', error);
       return {
         text: `Connection error: ${error.message}. Could you check if the API endpoint is accessible from your browser?`,
-        sourceDocuments: []
+        agentReasoning: []
       };
     }
   };
@@ -282,7 +315,7 @@ const RAGInterface = () => {
       } catch (error) {
         response = {
           text: "I'm sorry, I encountered an error. Could you please try again?",
-          sourceDocuments: []
+          agentReasoning: []
         };
       }
 
@@ -293,7 +326,7 @@ const RAGInterface = () => {
         content: responseText,
         isUser: false,
         timestamp: new Date(),
-        sourceDocuments: response?.sourceDocuments || []
+        agentReasoning: response?.agentReasoning || []
       };
 
       updatedChat = {
@@ -331,14 +364,14 @@ const RAGInterface = () => {
     >
       {/* Left sidebar - Chat list */}
       <div className="split-panel bg-white border-r">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-          <h2 className="text-lg font-semibold text-gray-800">Chats</h2>
+        <div className="p-4 border-b flex justify-between items-center bg-mtn-blue">
+          <h2 className="text-lg font-semibold text-white">Chats</h2>
           <button 
             onClick={createNewChat}
-            className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+            className="p-2 hover:bg-mtn-darkBlue rounded-full transition-colors"
             title="New Chat"
           >
-            <Plus className="w-5 h-5 text-gray-600" />
+            <Plus className="w-5 h-5 text-white" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -348,13 +381,13 @@ const RAGInterface = () => {
               onClick={() => setActiveChat(chat)}
               className={`p-3 rounded-lg cursor-pointer transition-colors ${
                 activeChat?.id === chat.id 
-                  ? 'bg-blue-50 border border-blue-200' 
+                  ? 'bg-mtn-yellow/10 border border-mtn-yellow' 
                   : 'hover:bg-gray-50 border border-transparent'
               }`}
             >
               <div className="flex items-center gap-3">
                 <MessageSquare className={`w-5 h-5 ${
-                  activeChat?.id === chat.id ? 'text-blue-500' : 'text-gray-500'
+                  activeChat?.id === chat.id ? 'text-mtn-blue' : 'text-gray-500'
                 }`} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900">{chat.title}</div>
@@ -371,8 +404,8 @@ const RAGInterface = () => {
       {/* Main chat area */}
       <div className="split-panel flex flex-col">
         {/* Chat header */}
-        <div className="px-6 py-4 border-b bg-white shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-800">{activeChat?.title}</h2>
+        <div className="px-6 py-4 border-b bg-mtn-blue shadow-sm">
+          <h2 className="text-lg font-semibold text-white">{activeChat?.title}</h2>
         </div>
 
         {/* Chat messages area */}
@@ -386,7 +419,7 @@ const RAGInterface = () => {
               }`}>
                 <div className={`p-4 rounded-2xl ${
                   message.isUser 
-                    ? 'bg-blue-500 text-white' 
+                    ? 'bg-mtn-blue text-white' 
                     : 'bg-white border border-gray-200 shadow-sm'
                 }`}>
                   <p className="whitespace-pre-wrap">{message.content}</p>
@@ -399,9 +432,9 @@ const RAGInterface = () => {
               <div className="message-container">
                 <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm animate-pulse">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
+                    <div className="w-2 h-2 bg-mtn-blue rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-mtn-blue rounded-full animate-bounce delay-100"></div>
+                    <div className="w-2 h-2 bg-mtn-blue rounded-full animate-bounce delay-200"></div>
                   </div>
                 </div>
               </div>
@@ -420,16 +453,16 @@ const RAGInterface = () => {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-mtn-blue focus:border-transparent"
                 placeholder="Ask a question..."
                 disabled={isLoading}
               />
               <button 
                 onClick={handleSendMessage}
-                className={`px-6 py-3 bg-blue-500 text-white rounded-xl transition-colors flex items-center gap-2 ${
+                className={`px-6 py-3 bg-mtn-yellow text-gray-900 font-medium rounded-xl transition-colors flex items-center gap-2 ${
                   isLoading 
                     ? 'opacity-50 cursor-not-allowed' 
-                    : 'hover:bg-blue-600'
+                    : 'hover:bg-mtn-lightYellow'
                 }`}
                 disabled={isLoading}
               >
@@ -442,8 +475,8 @@ const RAGInterface = () => {
 
       {/* Right sidebar - Document viewer */}
       <div className="split-panel bg-white border-l">
-        <div className="px-6 py-4 border-b">
-          <h2 className="text-lg font-semibold text-gray-800">Referenced Document</h2>
+        <div className="px-6 py-4 border-b bg-mtn-blue">
+          <h2 className="text-lg font-semibold text-white">Referenced Documents</h2>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           {currentDocument ? (
@@ -453,8 +486,8 @@ const RAGInterface = () => {
             />
           ) : (
             <div className="text-center py-12">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p className="text-gray-600 font-medium">No document referenced yet</p>
+              <FileText className="w-12 h-12 mx-auto mb-4 text-mtn-blue/30" />
+              <p className="text-gray-600 font-medium">No documents referenced yet</p>
               <p className="text-sm text-gray-500 mt-1">References will appear here when relevant</p>
             </div>
           )}
