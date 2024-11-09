@@ -4,6 +4,81 @@ import Split from 'react-split';
 
 // Flowise API configuration
 const FLOWISE_API = 'https://kenteai-dev.mtn.com/api/v1/prediction/d57f9c4b-9903-4b32-a7ca-44efa6d1d18b';
+const FOLLOWUP_API = 'https://kenteai-dev.mtn.com/api/v1/prediction/dbeb7e88-727b-44da-94a5-636941217d98';
+
+const SuggestedQuestions = ({ content, onAskQuestion }) => {
+  const [questions, setQuestions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      try {
+        const response = await fetch(FOLLOWUP_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ question: content })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch questions');
+        }
+
+        const responseText = await response.text();
+        const cleanedResponse = responseText.replace(/%$/, '');
+        const data = JSON.parse(cleanedResponse);
+        
+        // Split the text response into individual questions
+        const questionList = data.text.split('\n').filter(q => q.trim());
+        setQuestions(questionList.slice(0, 3)); // Limit to 3 questions
+      } catch (error) {
+        console.error('Error fetching follow-up questions:', error);
+        // Fallback questions if API fails
+        setQuestions([
+          `Can you explain more about ${content.slice(0, 30)}...?`,
+          'What is the significance of this in the current context?',
+          'What are the practical implications of this information?'
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchQuestions();
+  }, [content]);
+
+  if (isLoading) {
+    return (
+      <div className="mt-4">
+        <div className="flex flex-col gap-2">
+          {[1, 2, 3].map((_, index) => (
+            <div
+              key={index}
+              className="h-10 bg-gray-100 animate-pulse rounded-lg"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4">
+      <div className="flex flex-col gap-2">
+        {questions.map((question, index) => (
+          <button
+            key={index}
+            onClick={() => onAskQuestion(question)}
+            className="text-left text-sm px-4 py-2 bg-gray-50 hover:bg-mtn-yellow/10 rounded-lg text-gray-700 transition-colors border border-gray-200 hover:border-mtn-yellow"
+          >
+            {question}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const SelectionPopup = ({ position, selectedText, onAskQuestion, onClose }) => {
   const [isInputMode, setIsInputMode] = useState(false);
@@ -411,8 +486,8 @@ const RAGInterface = () => {
         {/* Chat messages area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {activeChat?.messages.map((message) => (
-            <div key={message.id} className={`flex ${
-              message.isUser ? 'justify-end' : 'justify-start'
+            <div key={message.id} className={`flex flex-col ${
+              message.isUser ? 'items-end' : 'items-start'
             }`}>
               <div className={`message-container ${
                 message.isUser ? 'ml-auto' : 'mr-auto'
@@ -424,6 +499,12 @@ const RAGInterface = () => {
                 }`}>
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 </div>
+                {!message.isUser && (
+                  <SuggestedQuestions 
+                    content={message.content}
+                    onAskQuestion={handleAskAboutSelection}
+                  />
+                )}
               </div>
             </div>
           ))}
