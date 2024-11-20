@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageSquare, FileText, Plus, MessageCircle } from 'lucide-react';
 import Split from 'react-split';
+import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../firebase';
+import { useNavigate } from 'react-router-dom';
 
 // Flowise API configuration
 const FLOWISE_API = 'https://kenteai-dev.mtn.com/api/v1/prediction/d57f9c4b-9903-4b32-a7ca-44efa6d1d18b';
@@ -29,12 +32,10 @@ const SuggestedQuestions = ({ content, onAskQuestion }) => {
         const cleanedResponse = responseText.replace(/%$/, '');
         const data = JSON.parse(cleanedResponse);
         
-        // Split the text response into individual questions
         const questionList = data.text.split('\n').filter(q => q.trim());
-        setQuestions(questionList.slice(0, 3)); // Limit to 3 questions
+        setQuestions(questionList.slice(0, 3));
       } catch (error) {
         console.error('Error fetching follow-up questions:', error);
-        // Fallback questions if API fails
         setQuestions([
           `Can you explain more about ${content.slice(0, 30)}...?`,
           'What is the significance of this in the current context?',
@@ -192,7 +193,6 @@ const DocumentViewer = ({ document, highlightedText, onAskAboutSelection }) => {
     }
   }, []);
 
-  // Extract source documents from the agent reasoning
   const sourceDocuments = document.agentReasoning?.reduce((docs, agent) => {
     if (agent.sourceDocuments && Array.isArray(agent.sourceDocuments)) {
       const validDocs = agent.sourceDocuments
@@ -263,6 +263,17 @@ const RAGInterface = () => {
   const messagesEndRef = useRef(null);
   const [sizes, setSizes] = useState([20, 40, 40]);
   const hasInitialized = useRef(false);
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
 
   const generateChatTitle = useCallback((message) => {
     const title = message.length > 30 ? `${message.substring(0, 30)}...` : message;
@@ -324,7 +335,6 @@ const RAGInterface = () => {
         };
       }
       
-      // Get the response text and remove any trailing % character
       const responseText = await response.text();
       const cleanedResponse = responseText.replace(/%$/, '');
       
@@ -479,8 +489,17 @@ const RAGInterface = () => {
       {/* Main chat area */}
       <div className="split-panel flex flex-col">
         {/* Chat header */}
-        <div className="px-6 py-4 border-b bg-mtn-blue shadow-sm">
+        <div className="px-6 py-4 border-b bg-mtn-blue shadow-sm flex justify-between items-center">
           <h2 className="text-lg font-semibold text-white">{activeChat?.title}</h2>
+          <div className="flex items-center gap-4">
+            <span className="text-white">{currentUser?.email}</span>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Chat messages area */}
